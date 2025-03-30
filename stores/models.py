@@ -5,8 +5,8 @@ from django.conf import settings
 class Store(models.Model):
     name = models.CharField(max_length=100)
     address = models.TextField()
-    # latitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
-    # longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
     contact_number = models.CharField(max_length=15)
     manager = models.OneToOneField(
         settings.AUTH_USER_MODEL,  # ✅ Correctly point to custom User model
@@ -30,3 +30,29 @@ class Item(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.store.name}"
+
+
+class Cart(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Cart of {self.user.username}"
+
+    @property
+    def total_amount(self):
+        return sum(item.subtotal for item in self.items.all())
+
+
+class CartItem(models.Model):
+    cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name='items')
+    item = models.ForeignKey(Item, on_delete=models.CASCADE)
+    quantity = models.PositiveIntegerField(default=1)
+
+    def __str__(self):
+        return f"{self.item.name} x {self.quantity} in {self.cart}"
+
+    @property
+    def subtotal(self):
+        return self.item.price * self.quantity

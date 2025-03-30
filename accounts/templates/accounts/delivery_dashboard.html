@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Delivery Dashboard - FastDrop{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <div class="dashboard-header">
+        <h1>Delivery Dashboard</h1>
+        <div class="dashboard-actions">
+            <a href="#" class="btn btn-primary">Update Status</a>
+            <a href="#" class="btn btn-primary">View Schedule</a>
+        </div>
+    </div>
+
+    <div class="dashboard-grid">
+        <div class="dashboard-card">
+            <h2>Today's Deliveries</h2>
+            <div class="list-container">
+                <p class="empty-state">No deliveries assigned for today.</p>
+            </div>
+        </div>
+
+        <div class="dashboard-card">
+            <h2>Delivery Statistics</h2>
+            <div class="stats-container">
+                <div class="stat-item">
+                    <h3>Total Deliveries</h3>
+                    <p>0</p>
+                </div>
+                <div class="stat-item">
+                    <h3>Completed</h3>
+                    <p>0</p>
+                </div>
+                <div class="stat-item">
+                    <h3>In Progress</h3>
+                    <p>0</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 
