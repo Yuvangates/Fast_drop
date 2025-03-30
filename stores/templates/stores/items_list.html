@@ -1,0 +1,71 @@
+<!-- stores/templates/stores/items_list.html -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Available Items</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f9f9f9;
+        }
+
+        h2 {
+            color: #333;
+        }
+
+        ul {
+            list-style-type: none;
+            padding: 0;
+        }
+
+        li {
+            background-color: #fff;
+            margin: 8px 0;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+
+        .btn-container {
+            margin-top: 20px;
+        }
+
+        a,
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        a:hover,
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>All Available Items</h2>
+    <ul>
+        {% for item in items %}
+        <li>{{ item.name }} - ₹{{ item.price }} (Available at: {{ item.store.name }})</li>
+        {% empty %}
+        <li>No items available at the moment.</li>
+        {% endfor %}
+    </ul>
+
+    <!-- Login Button -->
+    <div class="btn-container">
+        <a href="{% url 'accounts:login' %}">Login</a>
+    </div>
+</body>
+
+</html>
