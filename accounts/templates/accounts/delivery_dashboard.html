@@ -8,6 +8,7 @@
 {% endblock %}
 
 {% block content %}
+
 <div class="dashboard-container">
     <div class="dashboard-header">
         <h1>Delivery Dashboard</h1>
@@ -17,11 +18,72 @@
         </div>
     </div>
 
+    <div id="map" style="height: 500px; width: 100%;"></div>
+    
+    <script>
+        function initMap() {
+            const map = new google.maps.Map(document.getElementById('map'), {
+                zoom: 12,
+                center: { lat: 28.6139, lng: 77.2090 },  // Default center (Delhi)
+            });
+
+            const routes = JSON.parse('{{ routes|escapejs }}');
+
+            routes.forEach(route => {
+                if (route.polyline) {
+                    const decodedPath = google.maps.geometry.encoding.decodePath(route.polyline);
+
+                    const routeLine = new google.maps.Polyline({
+                        path: decodedPath,
+                        geodesic: true,
+                        strokeColor: "#FF0000",
+                        strokeOpacity: 1.0,
+                        strokeWeight: 2,
+                    });
+
+                    routeLine.setMap(map);
+                }
+
+                // Add markers for delivery locations
+                route.addresses.forEach(address => {
+                    new google.maps.Marker({
+                        position: { lat: address.lat, lng: address.lng },
+                        map: map,
+                        title: "Delivery Location",
+                    });
+                });
+            });
+        }
+    </script>
+    
+    <script src="https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_MAPS_API_KEY }}&libraries=geometry&callback=initMap"
+        async defer></script>
+
     <div class="dashboard-grid">
         <div class="dashboard-card">
             <h2>Today's Deliveries</h2>
             <div class="list-container">
+                {% if orders %}
+                {% for order in orders %}
+                <div class="order-item">
+                    <p><strong>Order ID:</strong> {{ order.id }}</p>
+                    <p><strong>Address:</strong> {{ order.delivery_address }}</p>
+                    <p><strong>Status:</strong> {{ order.status }}</p>
+                    <form method="POST" action="{% url 'update_order_status' order.id 'PICKED' %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-success">🚚 Delivery Picked</button>
+                    </form>
+                    
+                    <form method="POST" action="{% url 'update_order_status' order.id 'DELIVERED' %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-primary">✅ Delivery Delivered</button>
+                    </form>
+
+                </div>
+                {% endfor %}
+                {% else %}
                 <p class="empty-state">No deliveries assigned for today.</p>
+                {% endif %}
             </div>
         </div>
 
@@ -30,18 +92,73 @@
             <div class="stats-container">
                 <div class="stat-item">
                     <h3>Total Deliveries</h3>
-                    <p>0</p>
+                    <p>{{ total_deliveries }}</p>
                 </div>
                 <div class="stat-item">
                     <h3>Completed</h3>
-                    <p>0</p>
+                    <p>{{ completed_deliveries }}</p>
                 </div>
                 <div class="stat-item">
                     <h3>In Progress</h3>
-                    <p>0</p>
+                    <p>{{ in_progress_deliveries }}</p>
                 </div>
             </div>
         </div>
     </div>
+    {% for route in routes %}
+    <h3>Group ID: {{ route.group_id }}</h3>
+    <ul>
+        {% for order in route.orders %}
+        <li id="order-{{ order.id }}">
+            Order ID: {{ order.id }} - {{ order.address }}
+            | Status: <span id="status-{{ order.id }}">{{ order.status }}</span>
+    
+            <!-- Picked Button -->
+            {% if order.status == 'PENDING' %}
+            <button onclick="updateOrderStatus('{{ order.id }}', 'PICKED')">🚚 Mark as Picked</button>
+            {% endif %}
+    
+            <!-- Delivered Button -->
+            {% if order.status == 'PICKED' %}
+            <button onclick="updateOrderStatus('{{ order.id }}', 'DELIVERED')">✅ Mark as Delivered</button>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% endfor %}
+
+
+
 </div>
-{% endblock %} 
+
+<script>
+    function updateOrderStatus(orderId, status) {
+        fetch(`/update-order-status/${orderId}/${status}/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json',
+            }
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById(`status-${orderId}`).innerText = status;  // ✅ Update status dynamically
+                    if (status === 'PICKED') {
+                        document.getElementById(`order-${orderId}`).innerHTML += `
+                        <button onclick="updateOrderStatus('${orderId}', 'DELIVERED')">✅ Mark as Delivered</button>`;
+                    } else if (status === 'DELIVERED') {
+                        alert('Order marked as Delivered!');
+                    }
+                } else {
+                    alert('Error updating status!');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+    }
+</script>
+
+
+{% endblock %}

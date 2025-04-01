@@ -103,6 +103,12 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
+# Celery Configuration
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+GOOGLE_MAPS_API_KEY = 'AIzaSyC1VqOkQRTBxksbgjRp0-M6k8kDR1s6Exg'
+
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
 

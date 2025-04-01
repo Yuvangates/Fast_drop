@@ -4,8 +4,12 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib import messages
 from .forms import SignUpForm, LoginForm
-from .models import User
+from .models import User 
 from stores.models import Store, Item
+from django.shortcuts import get_object_or_404
+from orders.models import Order
+from django.http import JsonResponse
+from utils.google_maps import get_optimized_route
 
 def home(request):
     """Home page view that's accessible to everyone"""
@@ -29,14 +33,20 @@ def user_login(request):
             username = form.cleaned_data['username']
             password = form.cleaned_data['password']
             user = authenticate(request, username=username, password=password)
-            
-            if user:
-                login(request, user)
-                return redirect_based_on_role(user)
+
+            if user is not None:
+                if user.is_active:
+                    login(request, user)
+                    return redirect_based_on_role(user)
+                else:
+                    messages.error(request, "Your account is inactive!")
             else:
                 messages.error(request, "Invalid username or password!")
+        else:
+            messages.error(request, "Invalid form submission!")
     else:
         form = LoginForm()
+
     return render(request, 'accounts/login.html', {'form': form})
 
 def redirect_based_on_role(user):
@@ -68,9 +78,36 @@ def manager_dashboard(request):
 
 @login_required
 def delivery_dashboard(request):
-    if request.user.role != 'delivery_agent':
-        return redirect('accounts:login')
-    return render(request, 'accounts/delivery_dashboard.html')
+    # Get all grouped orders that are pending or picked
+    grouped_orders = Order.objects.filter(status__in=['PENDING', 'PICKED']).order_by('created_at')
+
+    routes = []
+    grouped_orders_by_id = {}
+
+    # Group orders by group_id
+    for order in grouped_orders:
+        if order.group_id not in grouped_orders_by_id:
+            grouped_orders_by_id[order.group_id] = []
+        grouped_orders_by_id[order.group_id].append(order)
+
+    for group_id, orders in grouped_orders_by_id.items():
+        polyline, legs = get_optimized_route(orders)
+        
+        routes.append({
+            'group_id': group_id,
+            'polyline': polyline,
+            'addresses': [
+                {'lat': leg['end_location']['lat'], 'lng': leg['end_location']['lng']} for leg in legs
+            ],
+            'orders': orders
+        })
+
+    return render(request, 'delivery_dashboard.html', {
+        'routes': routes,
+        'total_deliveries': grouped_orders.count(),
+        'completed_deliveries': Order.objects.filter(status='DELIVERED').count(),
+        'in_progress_deliveries': grouped_orders.count()
+    })
 
 @login_required
 def profile(request):
@@ -102,3 +139,18 @@ def change_password(request):
 def user_logout(request):
     logout(request)
     return redirect('accounts:home')
+
+@login_required
+def update_order_status(request, order_id, status):
+    """Update order status (PICKED/DELIVERED) and notify customer if needed."""
+    if request.method == 'POST':
+        order = get_object_or_404(Order, id=order_id)
+        
+        if status in ['PICKED', 'DELIVERED']:
+            order.status = status
+            order.save()
+            return JsonResponse({'success': True})
+        else:
+            return JsonResponse({'error': 'Invalid status!'}, status=400)
+
+    return JsonResponse({'error': 'Invalid request!'}, status=405)

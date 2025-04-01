@@ -1,6 +1,8 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 from .models import Order, OrderItem
 from stores.models import CartItem
 from django.db import transaction
@@ -66,3 +68,17 @@ def create_order(request):
         'cart_items': cart_items,
         'total_amount': total_amount
     })
+
+@csrf_exempt
+@login_required
+def update_order_status(request, order_id, status):
+    try:
+        order = Order.objects.get(id=order_id, delivery_agent=request.user)
+        if status in ['PICKED', 'DELIVERED']:
+            order.status = status
+            order.save()
+            return JsonResponse({'status': 'success', 'message': f'Order marked as {status}'})
+        else:
+            return JsonResponse({'status': 'error', 'message': 'Invalid status provided'})
+    except Order.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': 'Order not found'})
