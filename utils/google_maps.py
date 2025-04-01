@@ -1,23 +1,22 @@
+from fast_drop import settings
+import requests
+
 def get_optimized_route(orders):
     """Fetch optimized route including stores and delivery addresses."""
     api_key = settings.GOOGLE_MAPS_API_KEY
 
-    addresses = []
-    store_addresses = set()
+    addresses = set()
 
     for order in orders:
-        # Add store address based on ordered items' store
-        for item in order.items.all():
-            store = item.item.store
-            store_address = f"{store.address}, {store.city}, {store.state}, {store.pincode}"
-            
-            if store_address not in store_addresses:
-                store_addresses.add(store_address)
-                addresses.append(store_address)
+        # Add the store address directly from the order's store
+        if order.store and order.store.address:
+            addresses.add(order.store.address)  # Directly using store's address
         
         # Add delivery address of the order
         delivery_address = f"{order.address}, {order.city}, {order.state}, {order.pincode}"
-        addresses.append(delivery_address)
+        addresses.add(delivery_address)
+
+    addresses = list(addresses)  # Convert set to list to maintain order
 
     if not addresses:
         return None, None
