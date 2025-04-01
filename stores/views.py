@@ -1,5 +1,6 @@
 from django.shortcuts import render,redirect, get_object_or_404
-from .models import Store,Item, Cart, CartItem
+from .models import Store, Item, Cart, CartItem
+from orders.models import Order
 from .forms import ItemForm
 from django.http import HttpResponse
 from django.contrib.auth.decorators import login_required
@@ -54,12 +55,27 @@ def add_item(request):
 
 @login_required
 def manager_dashboard(request):
-    if request.user.is_staff and hasattr(request.user, 'store'):
-        store = request.user.store
-        items = store.items.all()
-        return render(request, 'stores/manager_dashboard.html', {'store': store, 'items': items})
-    else:
-        return render(request, 'stores/no_access.html')
+    if request.user.role != 'manager':
+        messages.error(request, 'Only managers can access this page.')
+        return redirect('stores:items_list')
+    
+    store = get_object_or_404(Store, manager=request.user)
+    items = store.items.all()
+    
+    # Get orders for the store
+    orders = Order.objects.filter(store=store).order_by('-created_at')
+    
+    context = {
+        'store': store,
+        'items': items,
+        'orders': orders,
+        'total_orders': orders.count(),
+        'pending_orders': orders.filter(status='PENDING').count(),
+        'confirmed_orders': orders.filter(status='CONFIRMED').count(),
+        'picked_orders': orders.filter(status='PICKED').count(),
+        'delivered_orders': orders.filter(status='DELIVERED').count(),
+    }
+    return render(request, 'stores/manager_dashboard.html', context)
 
 @login_required
 def add_to_cart(request, item_id):

@@ -1,79 +1,52 @@
 {% extends 'base.html' %}
-{% load static %}
 
-{% block title %}Delivery Dashboard - FastDrop{% endblock %}
-
-{% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+{% block extra_head %}
+<script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}"></script>
 {% endblock %}
 
 {% block content %}
-<div class="container mt-4">
+<div class="container-fluid mt-4">
     <div class="row">
-        <!-- Delivery Agent Info -->
-        <div class="col-md-4">
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">Delivery Agent Info</h5>
-                </div>
-                <div class="card-body">
-                    <p><strong>Name:</strong> {{ request.user.get_full_name }}</p>
-                    <p><strong>Email:</strong> {{ request.user.email }}</p>
-                    <p><strong>Current Location:</strong> <span id="current-location">Updating...</span></p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Active Deliveries -->
+        <!-- Map Section -->
         <div class="col-md-8">
             <div class="card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">Active Deliveries</h5>
-                </div>
                 <div class="card-body">
-                    {% if active_deliveries %}
-                        {% for delivery in active_deliveries %}
-                        <div class="card mb-3">
-                            <div class="card-body">
-                                <h6>Order #{{ delivery.id }}</h6>
-                                <p><strong>Store:</strong> {{ delivery.store.name }}</p>
-                                <p><strong>Status:</strong> <span class="badge {% if delivery.status == 'CONFIRMED' %}bg-info{% elif delivery.status == 'PICKED' %}bg-primary{% endif %}">{{ delivery.status }}</span></p>
-                                <p><strong>Delivery Address:</strong> {{ delivery.address }}, {{ delivery.city }}, {{ delivery.state }} - {{ delivery.pincode }}</p>
-                                
-                                {% if delivery.status == 'CONFIRMED' %}
-                                <button class="btn btn-primary btn-sm mark-picked" data-order-id="{{ delivery.id }}">Mark as Picked</button>
-                                {% elif delivery.status == 'PICKED' %}
-                                <button class="btn btn-success btn-sm mark-delivered" data-order-id="{{ delivery.id }}">Mark as Delivered</button>
-                                {% endif %}
-                            </div>
-                        </div>
-                        {% endfor %}
-                    {% else %}
-                        <p>No active deliveries.</p>
-                    {% endif %}
+                    <div id="map" style="height: 600px;"></div>
                 </div>
             </div>
         </div>
-    </div>
-
-    <!-- Map Section -->
-    <div class="row mt-4">
-        <div class="col-12">
+        
+        <!-- Orders Section -->
+        <div class="col-md-4">
             <div class="card">
                 <div class="card-header">
-                    <h5 class="card-title mb-0">Delivery Route</h5>
+                    <h5 class="card-title mb-0">Your Deliveries</h5>
                 </div>
                 <div class="card-body">
-                    <div id="map" style="height: 400px;"></div>
+                    {% for order in orders %}
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h6>Order #{{ order.id }}</h6>
+                            <p><strong>Store:</strong> {{ order.store.name }}</p>
+                            <p><strong>Status:</strong> <span class="badge {% if order.status == 'CONFIRMED' %}bg-info{% elif order.status == 'PICKED' %}bg-primary{% endif %}">{{ order.status }}</span></p>
+                            <p><strong>Delivery Address:</strong> {{ order.address }}, {{ order.city }}, {{ order.state }} - {{ order.pincode }}</p>
+                            
+                            {% if order.status == 'CONFIRMED' %}
+                            <button class="btn btn-primary btn-sm mark-picked" data-order-id="{{ order.id }}">Mark as Picked</button>
+                            {% elif order.status == 'PICKED' %}
+                            <button class="btn btn-success btn-sm mark-delivered" data-order-id="{{ order.id }}">Mark as Delivered</button>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% empty %}
+                    <p>No deliveries assigned.</p>
+                    {% endfor %}
                 </div>
             </div>
         </div>
     </div>
 </div>
-{% endblock %}
 
-{% block extra_head %}
-<script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}"></script>
 {% endblock %}
 
 {% block extra_js %}
@@ -119,7 +92,6 @@ function initMap() {
 // Update delivery agent location
 function updateLocation(position) {
     const location = `${position.coords.latitude},${position.coords.longitude}`;
-    document.getElementById('current-location').textContent = location;
     
     fetch('{% url "orders:update_location" %}', {
         method: 'POST',
@@ -175,4 +147,4 @@ window.onload = function() {
     }
 };
 </script>
-{% endblock %}
+{% endblock %} 

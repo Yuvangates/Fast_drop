@@ -1,0 +1,267 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <!-- Map Section -->
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Delivery Route Map</h5>
+                </div>
+                <div class="card-body">
+                    <div id="map" style="height: 500px; width: 100%;">
+                        <div id="map-loading" class="text-center p-5">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading map...</span>
+                            </div>
+                            <p class="mt-2">Loading map...</p>
+                        </div>
+                        <div id="map-error" class="alert alert-danger d-none">
+                            Error loading map. Please check your internet connection and try again.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Orders Section -->
+        <div class="col-md-4">
+            <!-- Assigned Orders -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Your Active Deliveries</h5>
+                </div>
+                <div class="card-body">
+                    {% for order in assigned_orders %}
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h6 class="card-title">Order #{{ order.id }}</h6>
+                            <p class="card-text">
+                                <strong>Store:</strong> {{ order.store.name }}<br>
+                                <strong>Customer:</strong> {{ order.user.get_full_name }}<br>
+                                <strong>Address:</strong> {{ order.address }}, {{ order.city }}<br>
+                                <strong>Status:</strong> 
+                                <span class="badge {% if order.status == 'CONFIRMED' %}bg-info{% else %}bg-primary{% endif %}">
+                                    {{ order.status }}
+                                </span>
+                            </p>
+                            {% if order.status == 'CONFIRMED' %}
+                            <form method="post" action="{% url 'orders:update_delivery_status' order.id %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="status" value="PICKED">
+                                <button type="submit" class="btn btn-primary btn-sm">Mark as Picked</button>
+                            </form>
+                            {% elif order.status == 'PICKED' %}
+                            <form method="post" action="{% url 'orders:update_delivery_status' order.id %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="status" value="DELIVERED">
+                                <button type="submit" class="btn btn-success btn-sm">Mark as Delivered</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% empty %}
+                    <p class="text-center">No active deliveries assigned.</p>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Available Orders -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Available Orders</h5>
+                </div>
+                <div class="card-body">
+                    {% for order in pickup_orders %}
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h6 class="card-title">Order #{{ order.id }}</h6>
+                            <p class="card-text">
+                                <strong>Store:</strong> {{ order.store.name }}<br>
+                                <strong>Customer:</strong> {{ order.user.get_full_name }}<br>
+                                <strong>Address:</strong> {{ order.address }}, {{ order.city }}
+                            </p>
+                            <form method="post" action="{% url 'orders:accept_delivery' order.id %}">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-primary btn-sm">Accept Delivery</button>
+                            </form>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <p class="text-center">No available orders to pick up.</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let map;
+    let directionsService;
+    let directionsRenderer;
+    let mapInitialized = false;
+
+    function showMapError(message) {
+        document.getElementById('map-loading').style.display = 'none';
+        const errorDiv = document.getElementById('map-error');
+        errorDiv.textContent = message;
+        errorDiv.classList.remove('d-none');
+    }
+
+    function initMap() {
+        try {
+            if (!google || !google.maps) {
+                showMapError('Google Maps failed to load. Please check your internet connection.');
+                return;
+            }
+
+            document.getElementById('map-loading').style.display = 'none';
+            
+            // Default center (will be updated with route)
+            const defaultCenter = { lat: 20.5937, lng: 78.9629 }; // Center of India
+            map = new google.maps.Map(document.getElementById('map'), {
+                zoom: 5,
+                center: defaultCenter,
+                mapTypeControl: true,
+                streetViewControl: true,
+                fullscreenControl: true
+            });
+
+            directionsService = new google.maps.DirectionsService();
+            directionsRenderer = new google.maps.DirectionsRenderer({
+                map: map,
+                suppressMarkers: false
+            });
+
+            {% if assigned_orders %}
+                const waypoints = [];
+                {% for order in assigned_orders %}
+                waypoints.push({
+                    location: "{{ order.store.address }}, {{ order.store.city }}",
+                    stopover: true,
+                    title: "Store: {{ order.store.name }}"
+                });
+                waypoints.push({
+                    location: "{{ order.address }}, {{ order.city }}",
+                    stopover: true,
+                    title: "Delivery: Order #{{ order.id }}"
+                });
+                {% endfor %}
+
+                if (waypoints.length > 0) {
+                    calculateAndDisplayRoute(waypoints);
+                }
+            {% else %}
+                // If no orders, just show the map centered on India
+                new google.maps.Marker({
+                    position: defaultCenter,
+                    map: map,
+                    title: 'No active deliveries',
+                    animation: google.maps.Animation.DROP
+                });
+            {% endif %}
+
+            mapInitialized = true;
+        } catch (error) {
+            console.error('Error initializing map:', error);
+            showMapError('Failed to initialize map. Please refresh the page.');
+        }
+    }
+
+    function calculateAndDisplayRoute(waypoints) {
+        if (!directionsService || !directionsRenderer) return;
+
+        const origin = waypoints[0].location;
+        const destination = waypoints[waypoints.length - 1].location;
+        const intermediateWaypoints = waypoints.slice(1, -1).map(wp => ({
+            location: wp.location,
+            stopover: wp.stopover
+        }));
+
+        directionsService.route({
+            origin: origin,
+            destination: destination,
+            waypoints: intermediateWaypoints,
+            optimizeWaypoints: true,
+            travelMode: google.maps.TravelMode.DRIVING
+        }, (response, status) => {
+            if (status === 'OK') {
+                directionsRenderer.setDirections(response);
+                const bounds = new google.maps.LatLngBounds();
+                response.routes[0].legs.forEach((leg) => {
+                    bounds.extend(leg.start_location);
+                    bounds.extend(leg.end_location);
+                });
+                map.fitBounds(bounds);
+            } else {
+                console.error('Directions request failed:', status);
+                showMapError('Failed to calculate route. Showing markers instead.');
+                showMarkersOnly(waypoints);
+            }
+        });
+    }
+
+    function showMarkersOnly(waypoints) {
+        if (!map) return;
+
+        const bounds = new google.maps.LatLngBounds();
+        const geocoder = new google.maps.Geocoder();
+
+        waypoints.forEach((waypoint, index) => {
+            geocoder.geocode({ address: waypoint.location }, (results, status) => {
+                if (status === 'OK') {
+                    const marker = new google.maps.Marker({
+                        map: map,
+                        position: results[0].geometry.location,
+                        title: waypoint.title,
+                        animation: google.maps.Animation.DROP,
+                        label: (index + 1).toString()
+                    });
+
+                    // Add info window
+                    const infoWindow = new google.maps.InfoWindow({
+                        content: `<div><strong>${waypoint.title}</strong></div>`
+                    });
+
+                    marker.addListener('click', () => {
+                        infoWindow.open(map, marker);
+                    });
+
+                    bounds.extend(results[0].geometry.location);
+                    map.fitBounds(bounds);
+                }
+            });
+        });
+    }
+
+    // Load the Maps JavaScript API with error handling
+    function loadGoogleMaps() {
+        const script = document.createElement('script');
+        script.src = `https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&libraries=places&callback=initMap`;
+        script.async = true;
+        script.defer = true;
+        script.onerror = () => {
+            showMapError('Failed to load Google Maps. Please check your internet connection.');
+        };
+        document.head.appendChild(script);
+
+        // Add timeout to detect if the API fails to load
+        setTimeout(() => {
+            if (!mapInitialized) {
+                showMapError('Google Maps took too long to load. Please refresh the page.');
+            }
+        }, 10000); // 10 second timeout
+    }
+
+    // Load the map when the page is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', loadGoogleMaps);
+    } else {
+        loadGoogleMaps();
+    }
+</script>
+{% endblock %} 

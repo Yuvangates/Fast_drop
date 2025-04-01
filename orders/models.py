@@ -1,6 +1,6 @@
 from django.db import models
 from django.conf import settings
-from stores.models import Item
+from stores.models import Item, Store
 from django.utils.timezone import now, timedelta
 import uuid
 
@@ -24,6 +24,21 @@ class Order(models.Model):
         on_delete=models.CASCADE,
         related_name='orders'
     )
+    store = models.ForeignKey(
+        Store,
+        on_delete=models.CASCADE,
+        related_name='orders',
+        null=True,  # Make it nullable initially
+        blank=True  # Allow blank values in forms
+    )
+    delivery_agent = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='deliveries',
+        limit_choices_to={'role': 'delivery_agent'}
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
@@ -45,9 +60,10 @@ class Order(models.Model):
         ordering = ['-created_at']
 
     def save(self, *args, **kwargs):
-    # Group orders placed within 4 minutes into the same group
-        if not self.group_id:
+        # Group orders placed within 4 minutes for the same store into the same group
+        if not self.group_id and self.store:
             recent_order = Order.objects.filter(
+                store=self.store,
                 created_at__gte=now() - timedelta(minutes=4),
                 status__in=['PENDING', 'CONFIRMED']
             ).order_by('-created_at').first()

@@ -10,6 +10,7 @@ from django.shortcuts import get_object_or_404
 from orders.models import Order
 from django.http import JsonResponse
 from utils.google_maps import get_optimized_route
+from django.conf import settings
 
 def home(request):
     """Home page view that's accessible to everyone"""
@@ -78,36 +79,28 @@ def manager_dashboard(request):
 
 @login_required
 def delivery_dashboard(request):
-    # Get all grouped orders that are pending or picked
-    grouped_orders = Order.objects.filter(status__in=['PENDING', 'PICKED']).order_by('created_at')
-
-    routes = []
-    grouped_orders_by_id = {}
-
-    # Group orders by group_id
-    for order in grouped_orders:
-        if order.group_id not in grouped_orders_by_id:
-            grouped_orders_by_id[order.group_id] = []
-        grouped_orders_by_id[order.group_id].append(order)
-
-    for group_id, orders in grouped_orders_by_id.items():
-        polyline, legs = get_optimized_route(orders)
+    if request.user.role != 'delivery_agent':
+        return redirect('accounts:login')
         
-        routes.append({
-            'group_id': group_id,
-            'polyline': polyline,
-            'addresses': [
-                {'lat': leg['end_location']['lat'], 'lng': leg['end_location']['lng']} for leg in legs
-            ],
-            'orders': orders
-        })
+    # Get active deliveries for the delivery agent
+    active_deliveries = Order.objects.filter(
+        delivery_agent=request.user,
+        status__in=['CONFIRMED', 'PICKED']
+    ).order_by('created_at')
 
-    return render(request, 'delivery_dashboard.html', {
-        'routes': routes,
-        'total_deliveries': grouped_orders.count(),
-        'completed_deliveries': Order.objects.filter(status='DELIVERED').count(),
-        'in_progress_deliveries': grouped_orders.count()
-    })
+    # Get route data for the map
+    polyline = None
+    legs = None
+    if active_deliveries.exists():
+        polyline, legs = get_optimized_route(active_deliveries)
+
+    context = {
+        'active_deliveries': active_deliveries,
+        'polyline': polyline,
+        'legs': legs,
+        'google_maps_api_key': settings.GOOGLE_MAPS_API_KEY,
+    }
+    return render(request, 'accounts/delivery_dashboard.html', context)
 
 @login_required
 def profile(request):
