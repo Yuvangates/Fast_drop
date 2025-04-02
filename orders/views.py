@@ -3,13 +3,16 @@ from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib import messages
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from .models import Order, OrderItem
+from .models import Order, OrderItem, OrderBatch
 from stores.models import CartItem, Store
 from django.db import transaction
 from utils.google_maps import get_optimized_route
 from django.conf import settings
 from django.db.models import Count
 from accounts.models import User
+from django.utils import timezone
+from datetime import datetime, timedelta
+from .forms import OrderForm
 
 def is_manager(user):
     return user.role == 'manager'
@@ -201,66 +204,131 @@ def update_location(request):
 
 @login_required
 def delivery_dashboard(request):
-    if request.user.role != 'delivery_agent':
-        messages.error(request, 'Only delivery agents can access this page.')
-        return redirect('home')
+    today = timezone.now().date()
     
-    # Get assigned orders for the delivery agent
+    # Get or create today's batch for the delivery agent
+    batch, created = OrderBatch.objects.get_or_create(
+        delivery_agent=request.user,
+        date=today,
+        defaults={'status': 'PENDING'}
+    )
+
+    # Get assigned orders for today's batch
     assigned_orders = Order.objects.filter(
         delivery_agent=request.user,
+        batch=batch,
         status__in=['CONFIRMED', 'PICKED']
-    ).order_by('-created_at')
-    
-    # Get orders that need to be picked up
+    ).order_by('created_at')
+
+    # Get available orders that can be added to today's batch
     pickup_orders = Order.objects.filter(
-        status='CONFIRMED',
-        delivery_agent__isnull=True
-    ).order_by('-created_at')
-    
-    # Get route data for the map
-    route_data = None
-    if assigned_orders.exists():
-        polyline, legs = get_optimized_route(assigned_orders)
-        if polyline and legs:
-            route_data = {
-                'polyline': polyline,
-                'legs': legs,
-                'google_maps_api_key': settings.GOOGLE_MAPS_API_KEY
-            }
-    
+        status='PENDING',
+        batch__isnull=True  # Only show orders not assigned to any batch
+    ).exclude(
+        delivery_agent=request.user  # Exclude orders already assigned to this agent
+    ).order_by('created_at')
+
+    # Get all batches for the delivery agent
+    batches = OrderBatch.objects.filter(
+        delivery_agent=request.user
+    ).order_by('-date', '-created_at')
+
     context = {
         'assigned_orders': assigned_orders,
         'pickup_orders': pickup_orders,
-        'route_data': route_data,
-        'google_maps_api_key': settings.GOOGLE_MAPS_API_KEY
+        'batches': batches,
+        'current_batch': batch,
+        'google_maps_api_key': settings.GOOGLE_MAPS_API_KEY,
     }
     return render(request, 'orders/delivery_dashboard.html', context)
 
 @login_required
 def accept_delivery(request, order_id):
-    if request.user.role != 'delivery_agent':
-        messages.error(request, 'Only delivery agents can accept deliveries.')
-        return redirect('home')
+    order = get_object_or_404(Order, id=order_id, status='PENDING')
+    today = timezone.now().date()
     
-    order = get_object_or_404(Order, id=order_id, status='CONFIRMED', delivery_agent__isnull=True)
+    # Get or create today's batch
+    batch, created = OrderBatch.objects.get_or_create(
+        delivery_agent=request.user,
+        date=today,
+        defaults={'status': 'PENDING'}
+    )
+
+    # Assign the order to the delivery agent and batch
     order.delivery_agent = request.user
+    order.batch = batch
+    order.status = 'CONFIRMED'
     order.save()
-    
-    messages.success(request, f'Order #{order.id} assigned to you.')
+
+    messages.success(request, f'Order #{order.id} has been assigned to you.')
     return redirect('orders:delivery_dashboard')
 
 @login_required
 def update_delivery_status(request, order_id):
-    if request.user.role != 'delivery_agent':
-        messages.error(request, 'Only delivery agents can update delivery status.')
-        return redirect('home')
-    
     order = get_object_or_404(Order, id=order_id, delivery_agent=request.user)
-    new_status = request.POST.get('status')
     
-    if new_status in ['PICKED', 'DELIVERED']:
-        order.status = new_status
-        order.save()
-        messages.success(request, f'Order #{order.id} status updated to {new_status}.')
+    if request.method == 'POST':
+        new_status = request.POST.get('status')
+        if new_status in ['PICKED', 'DELIVERED']:
+            order.status = new_status
+            order.save()
+            
+            # Update batch status if all orders are delivered
+            if new_status == 'DELIVERED':
+                batch = order.batch
+                if batch and batch.orders.filter(status__in=['CONFIRMED', 'PICKED']).count() == 0:
+                    batch.status = 'COMPLETED'
+                    batch.save()
+            
+            messages.success(request, f'Order #{order.id} status updated to {new_status}.')
+    
+    return redirect('orders:delivery_dashboard')
+
+@login_required
+def batch_details(request, batch_id):
+    batch = get_object_or_404(OrderBatch, id=batch_id, delivery_agent=request.user)
+    
+    orders = batch.orders.all().order_by('created_at')
+    
+    context = {
+        'batch': batch,
+        'orders': orders,
+        'google_maps_api_key': settings.GOOGLE_MAPS_API_KEY,
+    }
+    return render(request, 'orders/batch_details.html', context)
+
+@login_required
+def create_batch(request):
+    if request.method == 'POST':
+        date = request.POST.get('date')
+        if date:
+            date = datetime.strptime(date, '%Y-%m-%d').date()
+            
+            # Check if batch already exists for this date
+            if OrderBatch.objects.filter(delivery_agent=request.user, date=date).exists():
+                messages.error(request, 'A batch already exists for this date.')
+                return redirect('orders:delivery_dashboard')
+            
+            # Create new batch
+            batch = OrderBatch.objects.create(
+                delivery_agent=request.user,
+                date=date,
+                status='PENDING'
+            )
+            
+            # Assign pending orders to the batch
+            pending_orders = Order.objects.filter(
+                status='PENDING',
+                batch__isnull=True
+            ).order_by('created_at')
+            
+            for order in pending_orders:
+                order.batch = batch
+                order.delivery_agent = request.user
+                order.status = 'CONFIRMED'
+                order.save()
+            
+            messages.success(request, f'Created new batch for {date} with {pending_orders.count()} orders.')
+            return redirect('orders:batch_details', batch_id=batch.id)
     
     return redirect('orders:delivery_dashboard')

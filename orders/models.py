@@ -51,10 +51,13 @@ class Order(models.Model):
     city = models.CharField(max_length=100)
     state = models.CharField(max_length=100)
     pincode = models.CharField(max_length=10)
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
 
     # Grouping Orders for Optimization
     group_id = models.UUIDField(default=uuid.uuid4, editable=False)
     delivery_agent_location = models.CharField(max_length=255, blank=True, null=True)  # Starting location for agent
+    batch = models.ForeignKey('OrderBatch', on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
 
     class Meta:
         ordering = ['-created_at']
@@ -87,3 +90,39 @@ class OrderItem(models.Model):
 
     def __str__(self):
         return f'{self.item.name} x {self.quantity}'
+
+class OrderBatch(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('IN_PROGRESS', 'In Progress'),
+        ('COMPLETED', 'Completed'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+
+    delivery_agent = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='order_batches')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    date = models.DateField()  # The date this batch is for
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-date', '-created_at']
+        unique_together = ['delivery_agent', 'date']
+
+    def __str__(self):
+        return f"Batch for {self.delivery_agent.get_full_name()} on {self.date}"
+
+    @property
+    def total_orders(self):
+        return self.orders.count()
+
+    @property
+    def completed_orders(self):
+        return self.orders.filter(status='DELIVERED').count()
+
+    @property
+    def progress_percentage(self):
+        if self.total_orders == 0:
+            return 0
+        return (self.completed_orders / self.total_orders) * 100

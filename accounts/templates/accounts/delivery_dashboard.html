@@ -3,6 +3,10 @@
 
 {% block title %}Delivery Dashboard - FastDrop{% endblock %}
 
+{% block extra_head %}
+<script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&libraries=geometry"></script>
+{% endblock %}
+
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
 {% endblock %}
@@ -32,24 +36,29 @@
                 </div>
                 <div class="card-body">
                     {% if active_deliveries %}
-                        {% for delivery in active_deliveries %}
-                        <div class="card mb-3">
-                            <div class="card-body">
-                                <h6>Order #{{ delivery.id }}</h6>
-                                <p><strong>Store:</strong> {{ delivery.store.name }}</p>
-                                <p><strong>Status:</strong> <span class="badge {% if delivery.status == 'CONFIRMED' %}bg-info{% elif delivery.status == 'PICKED' %}bg-primary{% endif %}">{{ delivery.status }}</span></p>
-                                <p><strong>Delivery Address:</strong> {{ delivery.address }}, {{ delivery.city }}, {{ delivery.state }} - {{ delivery.pincode }}</p>
-                                
-                                {% if delivery.status == 'CONFIRMED' %}
-                                <button class="btn btn-primary btn-sm mark-picked" data-order-id="{{ delivery.id }}">Mark as Picked</button>
-                                {% elif delivery.status == 'PICKED' %}
-                                <button class="btn btn-success btn-sm mark-delivered" data-order-id="{{ delivery.id }}">Mark as Delivered</button>
-                                {% endif %}
-                            </div>
+                    {% for delivery in active_deliveries %}
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h6>Order #{{ delivery.id }}</h6>
+                            <p><strong>Store:</strong> {{ delivery.store.name }}</p>
+                            <p><strong>Status:</strong> <span
+                                    class="badge {% if delivery.status == 'CONFIRMED' %}bg-info{% elif delivery.status == 'PICKED' %}bg-primary{% endif %}">{{
+                                    delivery.status }}</span></p>
+                            <p><strong>Delivery Address:</strong> {{ delivery.address }}, {{ delivery.city }}, {{
+                                delivery.state }} - {{ delivery.pincode }}</p>
+
+                            {% if delivery.status == 'CONFIRMED' %}
+                            <button class="btn btn-primary btn-sm mark-picked" data-order-id="{{ delivery.id }}">Mark as
+                                Picked</button>
+                            {% elif delivery.status == 'PICKED' %}
+                            <button class="btn btn-success btn-sm mark-delivered" data-order-id="{{ delivery.id }}">Mark
+                                as Delivered</button>
+                            {% endif %}
                         </div>
-                        {% endfor %}
+                    </div>
+                    {% endfor %}
                     {% else %}
-                        <p>No active deliveries.</p>
+                    <p>No active deliveries.</p>
                     {% endif %}
                 </div>
             </div>
@@ -72,107 +81,41 @@
 </div>
 {% endblock %}
 
-{% block extra_head %}
-<script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}"></script>
-{% endblock %}
-
 {% block extra_js %}
 <script>
-let map;
-let directionsService;
-let directionsRenderer;
-
-function initMap() {
-    map = new google.maps.Map(document.getElementById('map'), {
-        zoom: 12,
-        center: { lat: 0, lng: 0 }
-    });
-
-    directionsService = new google.maps.DirectionsService();
-    directionsRenderer = new google.maps.DirectionsRenderer({
-        map: map
-    });
-
-    {% if polyline %}
-    // Decode the polyline
-    const decodedPath = google.maps.geometry.encoding.decodePath('{{ polyline }}');
-    
-    // Create a new route
-    const route = {
-        overview_polyline: {
-            points: '{{ polyline }}'
-        },
-        legs: {{ legs|safe }}
-    };
-
-    directionsRenderer.setDirections({
-        routes: [route]
-    });
-
-    // Fit the map to show all markers
-    const bounds = new google.maps.LatLngBounds();
-    decodedPath.forEach(point => bounds.extend(point));
-    map.fitBounds(bounds);
-    {% endif %}
-}
-
-// Update delivery agent location
-function updateLocation(position) {
-    const location = `${position.coords.latitude},${position.coords.longitude}`;
-    document.getElementById('current-location').textContent = location;
-    
-    fetch('{% url "orders:update_location" %}', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-CSRFToken': '{{ csrf_token }}'
-        },
-        body: `location=${location}`
-    });
-}
-
-// Handle order status updates
-document.querySelectorAll('.mark-picked').forEach(button => {
-    button.addEventListener('click', function() {
-        const orderId = this.dataset.orderId;
-        updateOrderStatus(orderId, 'PICKED');
-    });
-});
-
-document.querySelectorAll('.mark-delivered').forEach(button => {
-    button.addEventListener('click', function() {
-        const orderId = this.dataset.orderId;
-        updateOrderStatus(orderId, 'DELIVERED');
-    });
-});
-
-function updateOrderStatus(orderId, status) {
-    fetch(`/orders/delivery/orders/${orderId}/status/${status}/`, {
-        method: 'POST',
-        headers: {
-            'X-CSRFToken': '{{ csrf_token }}'
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            location.reload();
-        }
-    });
-}
-
-// Initialize map when the page loads
-window.onload = function() {
-    initMap();
-    
-    // Start tracking location
-    if (navigator.geolocation) {
-        navigator.geolocation.watchPosition(updateLocation, null, {
-            enableHighAccuracy: true,
-            timeout: 5000,
-            maximumAge: 0
+    let map;
+    function initMap() {
+        map = new google.maps.Map(document.getElementById('map'), {
+            zoom: 12,
+            center: { lat: 20.5937, lng: 78.9629 } // Default center (India); update dynamically if needed
         });
+
+        {% if polyline %}
+        console.log("Polyline received:", "{{ polyline|escapejs }}");
+
+        if (typeof google !== "undefined" && google.maps && google.maps.geometry) {
+            const decodedPath = google.maps.geometry.encoding.decodePath("{{ polyline|escapejs }}");
+            const bounds = new google.maps.LatLngBounds();
+
+            decodedPath.forEach(point => bounds.extend(point));
+            map.fitBounds(bounds);
+
+            const polylinePath = new google.maps.Polyline({
+                path: decodedPath,
+                geodesic: true,
+                strokeColor: "#4285F4",
+                strokeOpacity: 1.0,
+                strokeWeight: 4
+            });
+            polylinePath.setMap(map);
+        } else {
+            console.error("Google Maps Geometry library is not loaded.");
+        }
+        {% endif %}
     }
-};
+
+    window.onload = function () {
+        initMap();
+    };
 </script>
 {% endblock %}

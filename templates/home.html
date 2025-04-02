@@ -8,55 +8,89 @@
 {% endblock %}
 
 {% block content %}
-<div class="hero-section">
-    <div class="hero-content">
+<!-- Hero Section -->
+<section class="hero-section">
+    <div class="container">
         <h1>Welcome to FastDrop</h1>
         <p>Your One-Stop Shop for Everything</p>
         <div class="hero-buttons">
-            <a href="{% url 'stores:items_list' %}" class="btn btn-primary">Browse Products</a>
+            <a href="{% url 'stores:items_list' %}" class="btn btn-primary btn-lg">Browse Products</a>
             {% if not user.is_authenticated %}
-                <a href="{% url 'accounts:signup' %}" class="btn btn-secondary">Sign Up</a>
+                <a href="{% url 'accounts:signup' %}" class="btn btn-secondary btn-lg">Sign Up</a>
             {% endif %}
         </div>
     </div>
-</div>
+</section>
 
-<div class="features-section">
-    <h2>Why Choose FastDrop?</h2>
-    <div class="features-grid">
-        <div class="feature-card">
-            <img src="{% static 'images/fast-delivery.png' %}" alt="Fast Delivery">
-            <h3>Fast Delivery</h3>
-            <p>Get your orders delivered quickly and efficiently</p>
-        </div>
-        <div class="feature-card">
-            <img src="{% static 'images/quality.png' %}" alt="Quality Products">
-            <h3>Quality Products</h3>
-            <p>Shop from verified sellers with quality products</p>
-        </div>
-        <div class="feature-card">
-            <img src="{% static 'images/secure-payment.png' %}" alt="Secure Payment">
-            <h3>Secure Payment</h3>
-            <p>Safe and secure payment options</p>
+<!-- Features Section -->
+<section class="features-section">
+    <div class="container">
+        <h2 class="text-center mb-5">Why Choose FastDrop?</h2>
+        <div class="row">
+            <div class="col-md-4">
+                <div class="feature-card">
+                    <img src="{% static 'images/fast-delivery.svg' %}" alt="Fast Delivery" class="feature-icon">
+                    <h3>Fast Delivery</h3>
+                    <p>Get your orders delivered quickly and efficiently</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="feature-card">
+                    <img src="{% static 'images/quality.svg' %}" alt="Quality Products" class="feature-icon">
+                    <h3>Quality Products</h3>
+                    <p>Shop from verified sellers with quality products</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="feature-card">
+                    <img src="{% static 'images/secure-payment.svg' %}" alt="Secure Payment" class="feature-icon">
+                    <h3>Secure Payment</h3>
+                    <p>Safe and secure payment options</p>
+                </div>
+            </div>
         </div>
     </div>
-</div>
+</section>
 
-<div class="categories-section">
-    <h2>Shop by Category</h2>
-    <div class="categories-grid">
-        <a href="{% url 'stores:items_list' %}?category=electronics" class="category-card">
-            <img src="{% static 'images/electronics.png' %}" alt="Electronics">
-            <h3>Electronics</h3>
-        </a>
-        <a href="{% url 'stores:items_list' %}?category=fashion" class="category-card">
-            <img src="{% static 'images/fashion.png' %}" alt="Fashion">
-            <h3>Fashion</h3>
-        </a>
-        <a href="{% url 'stores:items_list' %}?category=home" class="category-card">
-            <img src="{% static 'images/home.png' %}" alt="Home & Living">
-            <h3>Home & Living</h3>
-        </a>
+<!-- Categories Section -->
+<section class="categories-section">
+    <div class="container">
+        <h2 class="text-center mb-5">Shop by Category</h2>
+        <div class="row">
+            <div class="col-md-4">
+                <a href="{% url 'stores:items_list' %}?category=electronics" class="category-card">
+                    <img src="{% static 'images/electronics.svg' %}" alt="Electronics">
+                    <div class="category-overlay">
+                        <h3>Electronics</h3>
+                    </div>
+                </a>
+            </div>
+            <div class="col-md-4">
+                <a href="{% url 'stores:items_list' %}?category=fashion" class="category-card">
+                    <img src="{% static 'images/fashion.svg' %}" alt="Fashion">
+                    <div class="category-overlay">
+                        <h3>Fashion</h3>
+                    </div>
+                </a>
+            </div>
+            <div class="col-md-4">
+                <a href="{% url 'stores:items_list' %}?category=home" class="category-card">
+                    <img src="{% static 'images/home.svg' %}" alt="Home & Living">
+                    <div class="category-overlay">
+                        <h3>Home & Living</h3>
+                    </div>
+                </a>
+            </div>
+        </div>
     </div>
-</div>
+</section>
+
+<!-- Call to Action Section -->
+<section class="cta-section">
+    <div class="container">
+        <h2>Ready to Start Delivering?</h2>
+        <p class="mb-4">Join our team of delivery agents and start earning</p>
+        <a href="{% url 'accounts:signup' %}" class="btn btn-cta">Sign Up Now</a>
+    </div>
+</section>
 {% endblock %} 

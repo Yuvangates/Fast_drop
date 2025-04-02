@@ -11,6 +11,9 @@ from orders.models import Order
 from django.http import JsonResponse
 from utils.google_maps import get_optimized_route
 from django.conf import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 def home(request):
     """Home page view that's accessible to everyone"""
@@ -69,38 +72,92 @@ def customer_dashboard(request):
 def manager_dashboard(request):
     if request.user.role != 'manager':
         return redirect('accounts:login')
+    
+    # Get stores managed by this user
     stores = Store.objects.filter(manager=request.user)
+    
+    # Get items for these stores
     items = Item.objects.filter(store__in=stores)
+    
+    # Get orders for these stores
+    pending_orders = Order.objects.filter(
+        store__in=stores,
+        status='PENDING'
+    ).prefetch_related(
+        'items',
+        'items__item',
+        'user'
+    ).order_by('-created_at')
+    
+    confirmed_orders = Order.objects.filter(
+        store__in=stores,
+        status='CONFIRMED'
+    ).prefetch_related(
+        'items',
+        'items__item',
+        'user'
+    ).order_by('-created_at')
+    
     context = {
         'stores': stores,
         'items': items,
+        'pending_orders': pending_orders,
+        'confirmed_orders': confirmed_orders,
     }
     return render(request, 'accounts/manager_dashboard.html', context)
 
 @login_required
 def delivery_dashboard(request):
-    if request.user.role != 'delivery_agent':
-        return redirect('accounts:login')
-        
-    # Get active deliveries for the delivery agent
-    active_deliveries = Order.objects.filter(
-        delivery_agent=request.user,
-        status__in=['CONFIRMED', 'PICKED']
-    ).order_by('created_at')
+    try:
+        # Get assigned orders for the current delivery agent
+        assigned_orders = Order.objects.filter(
+            delivery_agent=request.user,
+            status__in=['CONFIRMED', 'PICKED']
+        ).prefetch_related(
+            'items',
+            'items__item',
+            'store',
+            'user'
+        ).order_by('status', 'created_at')
 
-    # Get route data for the map
-    polyline = None
-    legs = None
-    if active_deliveries.exists():
-        polyline, legs = get_optimized_route(active_deliveries)
+        # Get available orders for pickup (all confirmed orders without a delivery agent)
+        pickup_orders = Order.objects.filter(
+            status='CONFIRMED',
+            delivery_agent__isnull=True  # Orders without a delivery agent
+        ).prefetch_related(
+            'items',
+            'items__item',
+            'store',
+            'user'
+        ).order_by('created_at')
 
-    context = {
-        'active_deliveries': active_deliveries,
-        'polyline': polyline,
-        'legs': legs,
-        'google_maps_api_key': settings.GOOGLE_MAPS_API_KEY,
-    }
-    return render(request, 'accounts/delivery_dashboard.html', context)
+        # Try to get optimized route
+        polyline = None
+        legs = None
+        try:
+            polyline, legs = get_optimized_route(assigned_orders)
+        except Exception as e:
+            logger.error(f"Error getting optimized route: {str(e)}")
+            # Continue without the route - we'll still show markers
+
+        context = {
+            'assigned_orders': assigned_orders,
+            'pickup_orders': pickup_orders,
+            'google_maps_api_key': settings.GOOGLE_MAPS_API_KEY,
+            'polyline': polyline,
+            'legs': legs,
+        }
+        return render(request, 'orders/delivery_dashboard.html', context)
+    except Exception as e:
+        logger.error(f"Error in delivery dashboard: {str(e)}")
+        # Return a simplified context if there's an error
+        context = {
+            'assigned_orders': [],
+            'pickup_orders': [],
+            'google_maps_api_key': settings.GOOGLE_MAPS_API_KEY,
+            'error_message': 'There was an error loading the dashboard. Please try again later.'
+        }
+        return render(request, 'orders/delivery_dashboard.html', context)
 
 @login_required
 def profile(request):
