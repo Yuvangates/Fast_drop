@@ -13,6 +13,9 @@ from accounts.models import User
 from django.utils import timezone
 from datetime import datetime, timedelta
 from .forms import OrderForm
+import logging
+
+logger = logging.getLogger(__name__)
 
 def is_manager(user):
     return user.role == 'manager'
@@ -39,50 +42,72 @@ def create_order(request):
         messages.error(request, 'Your cart is empty.')
         return redirect('stores:cart')
     
-    total_amount = sum(item.subtotal for item in cart_items)
-    
     if request.method == 'POST':
         try:
             with transaction.atomic():
-                # Get the store from the first item
-                store = cart_items.first().item.store
-                
-                # Create the order
-                order = Order.objects.create(
-                    user=request.user,
-                    store=store,
-                    total_amount=total_amount,
-                    address=request.POST['address'],
-                    city=request.POST['city'],
-                    state=request.POST['state'],
-                    pincode=request.POST['pincode'],
-                    payment_method=request.POST['payment_method']
-                )
-                
-                # Create order items and update stock
+                # Group cart items by store
+                store_items = {}
                 for cart_item in cart_items:
-                    OrderItem.objects.create(
-                        order=order,
-                        item=cart_item.item,
-                        quantity=cart_item.quantity,
-                        price=cart_item.item.price
+                    store = cart_item.item.store
+                    if store not in store_items:
+                        store_items[store] = []
+                    store_items[store].append(cart_item)
+                
+                # Create separate orders for each store
+                orders = []
+                for store, items in store_items.items():
+                    # Calculate total amount for this store's items
+                    store_total = sum(item.subtotal for item in items)
+                    
+                    # Create the order for this store
+                    order = Order.objects.create(
+                        user=request.user,
+                        store=store,
+                        total_amount=store_total,
+                        address=request.POST['address'],
+                        city=request.POST['city'],
+                        state=request.POST['state'],
+                        pincode=request.POST['pincode'],
+                        payment_method=request.POST['payment_method']
                     )
-                    # Update stock
-                    cart_item.item.stock -= cart_item.quantity
-                    cart_item.item.save()
+                    
+                    # Create order items and update stock
+                    for cart_item in items:
+                        OrderItem.objects.create(
+                            order=order,
+                            item=cart_item.item,
+                            quantity=cart_item.quantity,
+                            price=cart_item.item.price
+                        )
+                        # Update stock
+                        cart_item.item.stock -= cart_item.quantity
+                        cart_item.item.save()
+                    
+                    orders.append(order)
                 
                 # Clear the cart
                 cart_items.delete()
                 
-                messages.success(request, 'Order placed successfully!')
-                return redirect('orders:order_detail', order_id=order.id)
+                messages.success(request, f'Successfully placed {len(orders)} orders!')
+                return redirect('orders:order_list')
                 
         except Exception as e:
-            messages.error(request, 'An error occurred while placing your order. Please try again.')
+            messages.error(request, 'An error occurred while placing your orders. Please try again.')
             return redirect('orders:create_order')
     
+    # Group cart items by store for display
+    store_items = {}
+    for cart_item in cart_items:
+        store = cart_item.item.store
+        if store not in store_items:
+            store_items[store] = []
+        store_items[store].append(cart_item)
+    
+    # Calculate total amount
+    total_amount = sum(item.subtotal for item in cart_items)
+    
     return render(request, 'orders/order_form.html', {
-        'cart_items': cart_items,
+        'store_items': store_items,
         'total_amount': total_amount
     })
 
@@ -204,85 +229,104 @@ def update_location(request):
 
 @login_required
 def delivery_dashboard(request):
-    today = timezone.now().date()
-    
-    # Get or create today's batch for the delivery agent
-    batch, created = OrderBatch.objects.get_or_create(
-        delivery_agent=request.user,
-        date=today,
-        defaults={'status': 'PENDING'}
-    )
+    try:
+        # Get assigned orders for the current delivery agent
+        assigned_orders = Order.objects.filter(
+            delivery_agent=request.user,
+            status__in=['CONFIRMED', 'PICKED']  # Only include orders that are not delivered
+        ).prefetch_related(
+            'items',
+            'items__item',
+            'store',
+            'user'
+        ).order_by('status', 'created_at')
 
-    # Get assigned orders for today's batch
-    assigned_orders = Order.objects.filter(
-        delivery_agent=request.user,
-        batch=batch,
-        status__in=['CONFIRMED', 'PICKED']
-    ).order_by('created_at')
+        # Get available orders for pickup (all confirmed orders without a delivery agent)
+        pickup_orders = Order.objects.filter(
+            status='CONFIRMED',
+            delivery_agent__isnull=True
+        ).prefetch_related(
+            'items',
+            'items__item',
+            'store',
+            'user'
+        ).order_by('created_at')
 
-    # Get available orders that can be added to today's batch
-    pickup_orders = Order.objects.filter(
-        status='PENDING',
-        batch__isnull=True  # Only show orders not assigned to any batch
-    ).exclude(
-        delivery_agent=request.user  # Exclude orders already assigned to this agent
-    ).order_by('created_at')
+        # Get optimized route only for orders that need to be picked up or delivered
+        active_orders = assigned_orders.exclude(status='DELIVERED')
+        maps_url = None
+        optimized_waypoints = None
+        if active_orders.exists():
+            maps_url, optimized_waypoints, _ = get_optimized_route(active_orders)
 
-    # Get all batches for the delivery agent
-    batches = OrderBatch.objects.filter(
-        delivery_agent=request.user
-    ).order_by('-date', '-created_at')
-
-    context = {
-        'assigned_orders': assigned_orders,
-        'pickup_orders': pickup_orders,
-        'batches': batches,
-        'current_batch': batch,
-        'google_maps_api_key': settings.GOOGLE_MAPS_API_KEY,
-    }
-    return render(request, 'orders/delivery_dashboard.html', context)
+        context = {
+            'assigned_orders': assigned_orders,  # Show all assigned orders in the table
+            'pickup_orders': pickup_orders,
+            'google_maps_api_key': settings.GOOGLE_MAPS_API_KEY,
+            'maps_url': maps_url,
+            'optimized_waypoints': optimized_waypoints,
+        }
+        return render(request, 'orders/delivery_dashboard.html', context)
+    except Exception as e:
+        logger.error(f"Error in delivery dashboard: {str(e)}")
+        context = {
+            'assigned_orders': [],
+            'pickup_orders': [],
+            'google_maps_api_key': settings.GOOGLE_MAPS_API_KEY,
+            'error_message': 'There was an error loading the dashboard. Please try again later.'
+        }
+        return render(request, 'orders/delivery_dashboard.html', context)
 
 @login_required
 def accept_delivery(request, order_id):
-    order = get_object_or_404(Order, id=order_id, status='PENDING')
-    today = timezone.now().date()
+    try:
+        # Get the order and verify it exists and is in the correct state
+        order = Order.objects.get(
+            id=order_id,
+            status='CONFIRMED',  # Only accept confirmed orders
+            delivery_agent__isnull=True  # Only accept orders without a delivery agent
+        )
+        
+        # Assign the order to the current delivery agent
+        order.delivery_agent = request.user
+        order.save()
+        
+        messages.success(request, f'Order #{order.id} has been assigned to you.')
+    except Order.DoesNotExist:
+        messages.error(request, 'Order not found or not available for pickup.')
+    except Exception as e:
+        messages.error(request, f'An error occurred: {str(e)}')
     
-    # Get or create today's batch
-    batch, created = OrderBatch.objects.get_or_create(
-        delivery_agent=request.user,
-        date=today,
-        defaults={'status': 'PENDING'}
-    )
-
-    # Assign the order to the delivery agent and batch
-    order.delivery_agent = request.user
-    order.batch = batch
-    order.status = 'CONFIRMED'
-    order.save()
-
-    messages.success(request, f'Order #{order.id} has been assigned to you.')
     return redirect('orders:delivery_dashboard')
 
 @login_required
 def update_delivery_status(request, order_id):
-    order = get_object_or_404(Order, id=order_id, delivery_agent=request.user)
-    
-    if request.method == 'POST':
+    try:
+        order = Order.objects.get(id=order_id, delivery_agent=request.user)
         new_status = request.POST.get('status')
+        
         if new_status in ['PICKED', 'DELIVERED']:
             order.status = new_status
             order.save()
             
-            # Update batch status if all orders are delivered
             if new_status == 'DELIVERED':
-                batch = order.batch
-                if batch and batch.orders.filter(status__in=['CONFIRMED', 'PICKED']).count() == 0:
-                    batch.status = 'COMPLETED'
-                    batch.save()
+                # Send notification or update any other necessary data
+                pass
             
-            messages.success(request, f'Order #{order.id} status updated to {new_status}.')
-    
-    return redirect('orders:delivery_dashboard')
+            messages.success(request, f'Order #{order.id} has been marked as {new_status}')
+        else:
+            messages.error(request, 'Invalid status update requested')
+            
+        # Always redirect back to delivery dashboard to refresh the route
+        return redirect('orders:delivery_dashboard')
+        
+    except Order.DoesNotExist:
+        messages.error(request, 'Order not found or not assigned to you')
+        return redirect('orders:delivery_dashboard')
+    except Exception as e:
+        logger.error(f"Error updating delivery status: {str(e)}")
+        messages.error(request, 'An error occurred while updating the order status')
+        return redirect('orders:delivery_dashboard')
 
 @login_required
 def batch_details(request, batch_id):

@@ -29,152 +29,141 @@ if (document.readyState === 'loading') {
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid mt-4">
+<div class="container mt-4">
+    <h2>Delivery Dashboard</h2>
+    
     {% if error_message %}
-    <div class="alert alert-danger" role="alert">
+    <div class="alert alert-danger">
         {{ error_message }}
     </div>
     {% endif %}
 
-    <div class="row">
-        <!-- Map Section -->
-        <div class="col-md-8">
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="card-title mb-0">Delivery Route Map</h5>
-                    <div class="btn-group" id="map-type-buttons" style="display: none;">
-                        <button class="btn btn-sm btn-outline-primary" onclick="toggleMapType('roadmap')">Road</button>
-                        <button class="btn btn-sm btn-outline-primary" onclick="toggleMapType('satellite')">Satellite</button>
-                        <button class="btn btn-sm btn-outline-primary" onclick="toggleMapType('terrain')">Terrain</button>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div id="map" style="height: 500px; width: 100%; position: relative;">
-                        <div id="map-loading" class="text-center p-4" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(255,255,255,0.9); border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); z-index: 1;">
-                            <div class="spinner-border text-primary" role="status">
-                                <span class="visually-hidden">Loading map...</span>
-                            </div>
-                            <p class="mt-2 mb-0">Loading map...</p>
-                        </div>
-                        <div id="map-error" class="alert alert-danger d-none m-3" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1; max-width: 80%;">
-                        </div>
-                    </div>
-                </div>
+    <!-- Assigned Orders Section -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h3>Your Assigned Orders</h3>
+            {% if maps_url %}
+            <div>
+                <a href="{{ maps_url }}" target="_blank" class="btn btn-primary">
+                    <i class="fas fa-map-marked-alt"></i> View Updated Route on Maps
+                </a>
             </div>
+            {% endif %}
         </div>
-
-        <!-- Orders Section -->
-        <div class="col-md-4">
-            <!-- Assigned Orders -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">Your Active Deliveries</h5>
-                </div>
-                <div class="card-body">
-                    {% for order in assigned_orders %}
-                    <div class="card mb-3">
-                        <div class="card-body">
-                            <h6 class="card-title">Order #{{ order.id }}</h6>
-                            <p class="card-text">
-                                <strong>Store:</strong> {{ order.store.name|default:"Not assigned" }}<br>
-                                <strong>Customer:</strong> {{ order.user.get_full_name|default:"Not available" }}<br>
-                                <strong>Address:</strong> {{ order.address }}, {{ order.city }}<br>
-                                <strong>Status:</strong> 
-                                <span class="badge {% if order.status == 'CONFIRMED' %}bg-info{% else %}bg-primary{% endif %}">
-                                    {{ order.status }}
+        <div class="card-body">
+            {% if assigned_orders %}
+                {% if optimized_waypoints %}
+                <div class="mb-4">
+                    <h4>Current Delivery Route</h4>
+                    <p class="text-muted">This route includes only orders that need to be picked up or delivered.</p>
+                    <div class="list-group">
+                        {% for waypoint in optimized_waypoints %}
+                        <div class="list-group-item">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong>{{ waypoint.name }}</strong>
+                                    <br>
+                                    <small class="text-muted">{{ waypoint.address }}</small>
+                                    {% if waypoint.type == 'store' %}
+                                    <br>
+                                    <small class="text-primary">Orders to pickup: {% for order_id in waypoint.orders %}#{{ order_id }}{% if not forloop.last %}, {% endif %}{% endfor %}</small>
+                                    {% endif %}
+                                </div>
+                                <span class="badge {% if waypoint.type == 'store' %}bg-primary{% else %}bg-success{% endif %}">
+                                    {{ waypoint.type|title }}
                                 </span>
-                            </p>
-                            
-                            <!-- Products Section -->
-                            <div class="products-section mt-3">
-                                <h6 class="mb-2">Products:</h6>
-                                {% for order_item in order.items.all %}
-                                <div class="product-item d-flex align-items-center mb-2">
-                                    {% if order_item.item.image %}
-                                        <img src="{{ order_item.item.image.url }}" alt="{{ order_item.item.name }}" class="product-image me-2" style="width: 50px; height: 50px; object-fit: cover;">
-                                    {% else %}
-                                        <img src="{% static 'images/placeholder.svg' %}" alt="{{ order_item.item.name }}" class="product-image me-2" style="width: 50px; height: 50px; object-fit: cover;">
-                                    {% endif %}
-                                    <div class="product-info">
-                                        <p class="mb-0"><strong>{{ order_item.item.name }}</strong></p>
-                                        <p class="mb-0 text-muted">Quantity: {{ order_item.quantity }}</p>
-                                        <p class="mb-0 text-muted">₹{{ order_item.price }}</p>
-                                    </div>
-                                </div>
-                                {% empty %}
-                                <p class="text-muted">No products in this order.</p>
-                                {% endfor %}
                             </div>
-
-                            {% if order.status == 'CONFIRMED' %}
-                            <form method="post" action="{% url 'orders:update_delivery_status' order.id %}">
-                                {% csrf_token %}
-                                <input type="hidden" name="status" value="PICKED">
-                                <button type="submit" class="btn btn-primary btn-sm">Mark as Picked</button>
-                            </form>
-                            {% elif order.status == 'PICKED' %}
-                            <form method="post" action="{% url 'orders:update_delivery_status' order.id %}">
-                                {% csrf_token %}
-                                <input type="hidden" name="status" value="DELIVERED">
-                                <button type="submit" class="btn btn-success btn-sm">Mark as Delivered</button>
-                            </form>
-                            {% endif %}
                         </div>
+                        {% endfor %}
                     </div>
-                    {% empty %}
-                    <p class="text-center">No active deliveries assigned.</p>
-                    {% endfor %}
                 </div>
-            </div>
+                {% endif %}
 
-            <!-- Available Orders -->
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">Available Orders</h5>
-                </div>
-                <div class="card-body">
-                    {% for order in pickup_orders %}
-                    <div class="card mb-3">
-                        <div class="card-body">
-                            <h6 class="card-title">Order #{{ order.id }}</h6>
-                            <p class="card-text">
-                                <strong>Store:</strong> {{ order.store.name }}<br>
-                                <strong>Customer:</strong> {{ order.user.get_full_name }}<br>
-                                <strong>Address:</strong> {{ order.address }}, {{ order.city }}
-                            </p>
-
-                            <!-- Products Section -->
-                            <div class="products-section mt-3">
-                                <h6 class="mb-2">Products:</h6>
-                                {% for order_item in order.items.all %}
-                                <div class="product-item d-flex align-items-center mb-2">
-                                    {% if order_item.item.image %}
-                                        <img src="{{ order_item.item.image.url }}" alt="{{ order_item.item.name }}" class="product-image me-2" style="width: 50px; height: 50px; object-fit: cover;">
-                                    {% else %}
-                                        <img src="{% static 'images/placeholder.svg' %}" alt="{{ order_item.item.name }}" class="product-image me-2" style="width: 50px; height: 50px; object-fit: cover;">
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Order ID</th>
+                                <th>Store</th>
+                                <th>Customer</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for order in assigned_orders %}
+                            <tr {% if order.status == 'DELIVERED' %}class="table-secondary"{% endif %}>
+                                <td>#{{ order.id }}</td>
+                                <td>{{ order.store.name }}</td>
+                                <td>{{ order.user.get_full_name|default:order.user.username }}</td>
+                                <td>
+                                    <span class="badge {% if order.status == 'CONFIRMED' %}bg-warning{% elif order.status == 'PICKED' %}bg-info{% else %}bg-success{% endif %}">
+                                        {{ order.status }}
+                                    </span>
+                                </td>
+                                <td>
+                                    {% if order.status == 'CONFIRMED' %}
+                                    <form method="post" action="{% url 'orders:update_delivery_status' order.id %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="status" value="PICKED">
+                                        <button type="submit" class="btn btn-sm btn-info">Mark as Picked</button>
+                                    </form>
+                                    {% elif order.status == 'PICKED' %}
+                                    <form method="post" action="{% url 'orders:update_delivery_status' order.id %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="status" value="DELIVERED">
+                                        <button type="submit" class="btn btn-sm btn-success">Mark as Delivered</button>
+                                    </form>
                                     {% endif %}
-                                    <div class="product-info">
-                                        <p class="mb-0"><strong>{{ order_item.item.name }}</strong></p>
-                                        <p class="mb-0 text-muted">Quantity: {{ order_item.quantity }}</p>
-                                        <p class="mb-0 text-muted">₹{{ order_item.price }}</p>
-                                    </div>
-                                </div>
-                                {% empty %}
-                                <p class="text-muted">No products in this order.</p>
-                                {% endfor %}
-                            </div>
-
-                            <form method="post" action="{% url 'orders:accept_delivery' order.id %}">
-                                {% csrf_token %}
-                                <button type="submit" class="btn btn-primary btn-sm">Accept Delivery</button>
-                            </form>
-                        </div>
-                    </div>
-                    {% empty %}
-                    <p class="text-center">No available orders to pick up.</p>
-                    {% endfor %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
-            </div>
+            {% else %}
+                <p>No assigned orders.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Available Orders Section -->
+    <div class="card">
+        <div class="card-header">
+            <h3>Available Orders for Pickup</h3>
+        </div>
+        <div class="card-body">
+            {% if pickup_orders %}
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Order ID</th>
+                                <th>Store</th>
+                                <th>Customer</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for order in pickup_orders %}
+                            <tr>
+                                <td>#{{ order.id }}</td>
+                                <td>{{ order.store.name }}</td>
+                                <td>{{ order.user.get_full_name|default:order.user.username }}</td>
+                                <td>
+                                    <form method="post" action="{% url 'orders:accept_delivery' order.id %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-primary">Accept Delivery</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p>No available orders for pickup.</p>
+            {% endif %}
         </div>
     </div>
 </div>
