@@ -10,7 +10,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v2
@@ -18,7 +17,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
-          python-version: "3.9" # or your project's version
+          python-version: "3.12.3" # or your project's version
 
       - name: Install Dependencies
         run: |
