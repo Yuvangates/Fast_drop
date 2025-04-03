@@ -247,7 +247,6 @@ def delivery_dashboard(request):
             delivery_agent__isnull=True
         ).prefetch_related(
             'items',
-            'items__item',
             'store',
             'user'
         ).order_by('created_at')
@@ -258,7 +257,6 @@ def delivery_dashboard(request):
         optimized_waypoints = None
         if active_orders.exists():
             maps_url, optimized_waypoints, _ = get_optimized_route(active_orders)
-
         context = {
             'assigned_orders': assigned_orders,  # Show all assigned orders in the table
             'pickup_orders': pickup_orders,

@@ -127,7 +127,6 @@ def update_cart(request, item_id):
     
     cart_item.quantity = quantity
     cart_item.save()
-    r
     messages.success(request, 'Cart updated successfully.')
     return redirect('stores:cart')
 
