@@ -104,3 +104,37 @@ class AccountsTestCase(TestCase):
             response = self.client.get(url)
             self.assertEqual(response.status_code, 302)  # Redirect to login page
             self.assertIn(reverse('accounts:login'), response.url)  # Redirects to login
+
+
+    
+    def test_manager_login_redirect(self):
+        """Test manager is redirected to their dashboard on login."""
+        response = self.client.post(reverse('accounts:login'), {
+            'username': 'manager_user',
+            'password': 'testpass'
+        })
+        self.assertRedirects(response, reverse('accounts:manager_dashboard'))
+
+    def test_change_password_with_wrong_old_password(self):
+        """Test password change fails with incorrect current password."""
+        self.client.login(username='customer_user', password='testpass')
+        response = self.client.post(reverse('accounts:change_password'), {
+            'old_password': 'wrongoldpass',
+            'new_password1': 'NewPass123',
+            'new_password2': 'NewPass123'
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Your old password was entered incorrectly.")
+
+    def test_manager_login_redirect(self):
+        """Test manager is redirected to their dashboard on login."""
+        response = self.client.post(reverse('accounts:login'), {
+            'username': 'manager_user',
+            'password': 'testpass'
+        })
+        self.assertRedirects(response, reverse('accounts:manager_dashboard'))
+
+
+
+
+

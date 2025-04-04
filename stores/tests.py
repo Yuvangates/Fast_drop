@@ -64,3 +64,28 @@ class StoreAppTest(TestCase):
         response = self.client.get(reverse('stores:cart'))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, self.item.name)
+    def test_customer_cannot_access_other_cart(self):
+        cart = Cart.objects.create(user=self.customer)
+        other_customer = User.objects.create_user(username='other_customer', password='password123', role='customer')
+        self.client.login(username='other_customer', password='password123')
+        response = self.client.get(reverse('stores:cart'))
+        # Assuming cart is filtered internally; cart should be empty
+        self.assertNotContains(response, self.item.name)
+
+    def test_update_cart_item_quantity(self):
+        self.client.login(username='customer', password='password123')
+        cart = Cart.objects.create(user=self.customer)
+        cart_item = CartItem.objects.create(cart=cart, item=self.item, quantity=1)
+        
+        response = self.client.post(reverse('stores:update_cart', args=[cart_item.id]), {
+            'quantity': 3
+        })
+        
+        cart_item.refresh_from_db()
+        self.assertEqual(cart_item.quantity, 3)
+        self.assertRedirects(response, reverse('stores:cart'))
+
+    
+
+
+
